@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+
+{% block title %}端口扫描{% endblock %}
+
+{% block content %}
+    <div class="container mt-4">
+        <h2 class="mb-4">端口扫描</h2>
+        <form method="post">
+            {% csrf_token %}
+            <div class="mb-3">
+                <label for="target" class="form-label">目标主机</label>
+                <input type="text" class="form-control" id="target" name="target" required>
+            </div>
+            <div class="mb-3">
+                <label for="port_range" class="form-label">端口范围 (例如: 20-80)</label>
+                <input type="text" class="form-control" id="port_range" name="port_range" required>
+            </div>
+            <button type="submit" class="btn btn-primary">开始扫描</button>
+        </form>
+
+        {% if results %}
+            <h3 class="mt-4">扫描结果</h3>
+            <table class="table table-striped">
+                <thead>
+                <tr>
+                    <th>端口</th>
+                    <th>状态</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for port in results %}
+                    <tr>
+                        <td>{{ port }}</td>
+                        <td class="text-success">开放</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+
+    </div>
+{% endblock %}

@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <title>{% block title %}默认标题{% endblock %}</title>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <meta content="" name="keywords">
+    <meta content="" name="description">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com/">
+    <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin="">
+    <link href="{% static 'css/css2.css' %}" rel="stylesheet">
+    <link href="{% static 'css/all.min.css' %}" rel="stylesheet">
+    <link href="{% static 'bootstrap5/css/bootstrap.min.css' %}" rel="stylesheet">
+    <link href="{% static 'css/style.css' %}" rel="stylesheet">
+    {% block head %}{% endblock %}
+</head>
+
+<body>
+<main>
+    <div class="container-fluid position-relative bg-white d-flex p-0">
+
+        <div id="spinner" class="show bg-white position-fixed translate-middle w-100 vh-100 top-50 start-50 d-flex align-items-center justify-content-center">
+            <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status">
+                <span class="sr-only">加载中...</span>
+            </div>
+        </div>
+
+        {% block sidebar %}
+            <div class="sidebar pe-4 pb-3">
+                <nav class="navbar bg-light navbar-light">
+                    <a class="navbar-brand mx-4 mb-3" href="#">
+                        <h3 class="text-primary">
+                            <i class="fa fa-hashtag me-1"></i>
+                            Web漏洞扫描
+                        </h3>
+                    </a>
+                    <div class="d-flex align-items-center ms-4 mb-4">
+                        <div class="position-relative">
+                            <img class="rounded-circle" src="{% static 'image/头像.jpg' %}" alt="用户头像" style="width: 40px; height: 40px;">
+                            <div class="bg-success rounded-circle border border-2 border-white position-absolute end-0 bottom-0 p-1" aria-label="在线状态"></div>
+                        </div>
+                        <div class="ms-3">
+                            <h6 class="mb-0">{{ user.username }}</h6>
+                            <span>管理员</span>
+                        </div>
+                    </div>
+                    <div class="navbar-nav w-100">
+                        <a href="{% url 'webscan:index' %}" class="nav-item nav-link {% if active == 'index' %}active{% endif %}"><i class="fa fa-tachometer-alt me-2"></i>首页</a>
+                        <a href="{% url 'webscan:webscan' %}" class="nav-item nav-link {% if active == 'webscan' %}active{% endif %}"><i class="fa fa-exclamation-triangle me-2"></i>漏洞扫描</a>
+                        <a href="{% url 'portscan:portscan' %}" class="nav-item nav-link {% if active == 'portscan' %}active{% endif %}"><i class="fa fa-plug me-2"></i>端口扫描</a>
+                        <a href="{% url 'finger:finger' %}" class="nav-item nav-link {% if active == 'finger' %}active{% endif %}"><i class="fa fa-fingerprint me-2"></i>指纹识别</a>
+                        <a href="{% url 'dirscan:dirscan' %}" class="nav-item nav-link {% if active == 'dirscan' %}active{% endif %}"><i class="fa fa-folder-open me-2"></i>目录扫描</a>
+                    </div>
+                </nav>
+            </div>
+        {% endblock %}
+
+        <div class="content">
+            {% block navbar %}
+                <nav class="navbar navbar-expand bg-light navbar-light sticky-top px-4 py-0">
+                    <a href="{% url 'webscan:index' %}" class="navbar-brand d-flex d-lg-none me-4">
+                        <h2 class="text-primary mb-0"><i class="fa fa-hashtag"></i></h2>
+                    </a>
+                    <a href="#" class="sidebar-toggler flex-shrink-0" aria-label="切换侧边栏">
+                        <i class="fa fa-bars"></i>
+                    </a>
+                    <form class="d-none d-md-flex ms-4">
+                        <input class="form-control border-0" type="search" placeholder="搜索" aria-label="搜索">
+                    </form>
+                    <div class="navbar-nav align-items-center ms-auto">
+                        <div class="nav-item dropdown">
+                            <a href="#" class="nav-link dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="fa fa-bell me-lg-2"></i>
+                                <span class="d-none d-lg-inline-flex">通知</span>
+                            </a>
+                            <div class="dropdown-menu dropdown-menu-end bg-light border-0 rounded-0 rounded-bottom m-0">
+                                <a href="#" class="dropdown-item">个人资料已更新</a>
+                                <a href="#" class="dropdown-item">新用户已添加</a>
+                                <a href="#" class="dropdown-item">密码已更改</a>
+                                <a href="#" class="dropdown-item text-center">查看所有通知</a>
+                            </div>
+                        </div>
+                        <div class="nav-item dropdown">
+                            <a href="#" class="nav-link dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                                <img class="rounded-circle me-lg-2" src="{% static 'image/头像.jpg' %}" alt="用户头像" style="width: 40px; height: 40px;">
+                                <span class="d-none d-lg-inline-flex">{{ user.username }}</span>
+                            </a>
+                            <div class="dropdown-menu dropdown-menu-end bg-light border-0 rounded-0 rounded-bottom m-0">
+                                <a href="{% url 'webauth:selfdata' %}" class="dropdown-item">我的个人资料</a>
+                                <a href="{% url 'webauth:settings' %}" class="dropdown-item">设置</a>
+                                <a href="{% url 'webauth:login' %}" class="dropdown-item">登出</a>
+                            </div>
+                        </div>
+                    </div>
+                </nav>
+            {% endblock %}
+
+            {% block content %}{% endblock %}
+        </div>
+    </div>
+
+    <script src="{% static 'jquery/jquery-3.7.1.min.js' %}"></script>
+    <script src="{% static 'bootstrap5/js/bootstrap.bundle.min.js' %}"></script>
+    <script src="{% static 'js/main.js' %}"></script>
+    {% block scripts %}{% endblock %}
+</main>
+</body>
+</html>

@@ -1,0 +1,63 @@
+{% extends 'base.html' %}
+
+{% block title %}首页 - Web漏洞扫描系统{% endblock %}
+{% block head %}
+    <link href="{% static 'bootstrap5/css/bootstrap.min.css' %}" rel="stylesheet">
+    <style>
+        .card {
+            margin-bottom: 20px;
+        }
+        .welcome-message {
+            margin-bottom: 40px;
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="welcome-message">
+        <h1 class="text-primary">欢迎回来, {{ user.username }}!</h1>
+        <p>作为管理员，您可以管理系统中的漏洞扫描和其他安全设置。</p>
+    </div>
+
+    <div class="row">
+        <div class="col-sm-6 col-md-4">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">当前扫描状态</h5>
+                    <p class="card-text">暂无进行中的扫描。</p>
+                    <a href="{% url 'webscan:webscan' %}" class="btn btn-primary">开始扫描</a>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-md-4">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">最新漏洞报告</h5>
+                    <p class="card-text">您有 <strong>3</strong> 个新的漏洞报告。点击查看详情。</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-md-4">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">系统健康检查</h5>
+                    <p class="card-text">所有系统指标正常监控中，暂无异常。</p>
+                    <a href="#" class="btn btn-secondary disabled">查看详情</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-12">
+            <h2 class="mt-4">最近活动</h2>
+            <ul class="list-group">
+                <li class="list-group-item">2023-10-01: 完成了对 https://example.com 的漏洞扫描。</li>
+                <li class="list-group-item">2023-09-29: 新用户已添加。</li>
+                <li class="list-group-item">2023-09-28: 更新了系统设置。</li>
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}

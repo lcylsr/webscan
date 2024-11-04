@@ -1,0 +1,120 @@
+{% extends 'base.html' %}
+
+{% block title %}网站漏洞扫描 - web漏洞扫描系统{% endblock %}
+
+{% block head %}
+    <style>
+        .scan-area {
+            background-color: #ffffff;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+            max-width: 800px;
+            margin: 30px auto;  /* 调整上边距使其更美观 */
+        }
+        .scan-results {
+            margin-top: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .status {
+            display: flex;
+            gap: 10px; /* 状态按钮间距 */
+        }
+        .loading {
+            display: none; /* 隐藏加载时的信息 */
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+    <div class="scan-area">
+        <h1 class="text-center">漏洞扫描</h1>
+        <form id="scan-form" method="post" onsubmit="return validateForm()">
+            {% csrf_token %}
+            <div class="mb-3">
+                <label for="target-url" class="form-label">目标URL:</label>
+                <input type="url" class="form-control" id="target-url" name="target_url" placeholder="输入要扫描的网站地址" required>
+                <small class="form-text text-muted">请输入有效的URL，例如: https://www.example.com</small>
+            </div>
+
+            <div class="mb-3">
+                <label for="scan-type" class="form-label">扫描类型:</label>
+                <select id="scan-type" name="scan_type" class="form-select" required>
+                    <option value="" disabled selected>选择扫描类型</option> <!-- 提示用户选择 -->
+                    <option value="quick">快速扫描</option>
+                    <option value="deep">深度扫描</option>
+                </select>
+            </div>
+
+            <div class="mb-3 text-center">
+                <button type="submit" class="btn btn-primary" id="start-scan">开始扫描</button>
+                <div class="loading" id="loading-indicator">扫描中，请稍候...</div> <!-- 加载信息 -->
+            </div>
+        </form>
+
+        <!-- 扫描结果展示 -->
+        <div class="scan-results" id="scan-results">
+            <h3>扫描结果</h3>
+            <table>
+                <thead>
+                <tr>
+                    <th>目标名称</th>
+                    <th>扫描状态</th>
+                    <th>扫描方式</th>
+                    <th>开始时间</th>
+                    <th>操作</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% if scan_results %}
+                    {% for result in scan_results %}
+                        <tr>
+                            <td>{{ result.target_name|escape }}</td>
+                            <td>{{ result.status|escape }}</td>
+                            <td>{{ result.scan_method|escape }}</td>
+                            <td>{{ result.start_time|escape }}</td>
+                            <td class="status">
+                                <button class="btn btn-primary" onclick="location.href='{% url 'webscan:webscan_detail' result.id %}'">查看详情</button>
+                                <button class="btn btn-secondary">下载报告</button>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="5" class="text-center">没有扫描结果。</td>
+                    </tr>
+                {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('scan-form');
+        const loadingIndicator = document.getElementById('loading-indicator');
+
+        form.addEventListener('submit', function() {
+            loadingIndicator.style.display = 'block'; // 显示加载提示
+        });
+
+        function validateForm() {
+            const urlInput = document.getElementById('target-url').value;
+            if (!urlInput) {
+                alert('请输入有效的URL。');
+                return false;
+            }
+            return true; // 输入有效，允许提交
+        }
+    </script>
+{% endblock %}
