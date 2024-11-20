@@ -2,47 +2,159 @@
 
 {% block title %}漏洞详情 - web漏洞扫描系统{% endblock %}
 
+{% block head %}
+    <style>
+        /* 扫描信息卡片样式优化 */
+        .card {
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.2);
+            border-radius: 5px;
+        }
+
+        .card-body p {
+            margin-bottom: 10px;
+        }
+
+        /* 漏洞列表表格样式优化 */
+        table {
+            width: 100%;
+            table-layout: fixed; /* 固定表格布局，防止单元格内容撑大表格宽度 */
+        }
+
+        table th, table td {
+            padding: 10px;
+            text-align: left;
+            word-wrap: break-word; /* 允许文本自动换行 */
+        }
+
+        /* 响应式调整表格列宽 */
+        @media (max-width: 768px) {
+            table th, table td {
+                font-size: 14px;
+            }
+        }
+
+        /* 返回按钮样式优化 */
+        .btn.btn-primary {
+            margin-top: 10px;
+        }
+    </style>
+{% endblock %}
+
 {% block content %}
-<div class="container mt-5">
-    <h1 class="text-center mb-4">漏洞详情</h1>
+    <div class="container mt-5">
+        <h1 class="text-center mb-4">漏洞详情</h1>
 
-    <div class="card">
-        <div class="card-header">
-            <h5>扫描信息</h5>
+        <div class="card">
+            <div class="card-header">
+                <h5>扫描信息</h5>
+            </div>
+            {% if scan_task %}
+                <div class="card-body">
+                    <p><strong>目标 URL:</strong> {{ scan_task.target_url|escape }}</p>
+                    <p><strong>扫描类型:</strong> {{ scan_task.scan_type|escape }}</p>
+                    <p><strong>漏洞数量:</strong> {{ scan_task.total_vulns }}</p>
+                    <p><strong>扫描时间:</strong> {{ scan_task.created_at|date:"Y-m-d H:i:s" }} ——— {{ scan_task.completed_at|date:"Y-m-d H:i:s" }}</p>
+                </div>
+            {% else %}
+                <div class="card-body">
+                    <p>{{ no_scan_task_msg }}</p>
+                </div>
+            {% endif %}
         </div>
-        <div class="card-body">
-            <p><strong>目标 URL:</strong> {{ scan.url|escape }}</p>
-            <p><strong>扫描类型:</strong> {{ scan.scan_type|escape }}</p>
-            <p><strong>扫描时间:</strong> {{ scan.created_at|date:"Y-m-d H:i:s" }}</p>
+
+        <div class="mt-4">
+            <h5>漏洞列表</h5>
+            <input type="text" id="vuln-search-input" placeholder="输入关键词搜索漏洞" class="form-control mb-2">
+            <div id="search-result-count"></div>
+            {% if vulnerability_details %}
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                        <tr>
+                            <th>漏洞url</th>
+                            <th>漏洞名称</th>
+                            <th>漏洞描述</th>
+                            <th>严重性</th>
+                            <th>发现时间</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {% for detail in vulnerability_details %}
+                            <tr>
+                                <td>{{ detail.url|escape }}</td>
+                                <td>{{ detail.vulnerability_name|escape }}</td>
+                                <td>{{ detail.description|escape }}</td>
+                                <td>{{ detail.severity }}</td>
+                                <td>{{ detail.discovery_time|date:"Y-m-d H:i:s" }}</td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="pagination">
+                    <span class="step-links">
+                        {% if vulnerability_details.has_previous %}
+                            <a href="?page=1">&laquo; 首页</a>
+                            <a href="?page={{ vulnerability_details.previous_page_number }}">上一页</a>
+                        {% endif %}
+        
+                        <span class="current">
+                            第 {{ vulnerability_details.number }} 页，共 {{ vulnerability_details.paginator.num_pages }} 页
+                        </span>
+        
+                        {% if vulnerability_details.has_next %}
+                            <a href="?page={{ vulnerability_details.next_page_number }}">下一页</a>
+                            <a href="?page={{ vulnerability_details.paginator.num_pages }}">末页 &raquo;</a>
+                        {% endif %}
+                    </span>
+                </div>
+            {% else %}
+                <p>{{ no_vuln_msg }}</p>
+            {% endif %}
+        </div>
+
+
+        <div class="mt-4">
+            <a href="{% url 'webscan:webscan' %}" class="btn btn-primary">返回扫描页面</a>
         </div>
     </div>
 
-    <div class="mt-4">
-        <h5>漏洞列表</h5>
-        {% if vulnerability_details %}
-            <table class="table table-striped">
-                <thead>
-                    <tr>
-                        <th>漏洞描述</th>
-                        <th>详细信息</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for detail in vulnerability_details %}
-                    <tr>
-                        <td>{{ detail.description|escape }}</td>
-                        <td>{{ detail.detail|safe }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        {% else %}
-            <p>没有发现漏洞。</p>
-        {% endif %}
-    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const searchInput = document.getElementById('vuln-search-input');
+            const vulnTable = document.getElementById('vuln-table');
+            const searchResultCount = document.getElementById('search-result-count');
+            const loadingSpinner = document.getElementById('loading-spinner');
 
-    <div class="mt-4">
-        <a href="{% url 'webscan:webscan' %}" class="btn btn-primary">返回扫描</a>
-    </div>
-</div>
+            function loadVulnerabilities(keyword = '') {
+                loadingSpinner.style.display = 'block';
+                fetch(`/webscan/scan_detail/${scan_task_id}/?keyword=${keyword}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        vulnTable.innerHTML = '';
+                        data.vulnerabilities.forEach(vuln => {
+                            const row = document.createElement('tr');
+                            row.innerHTML = `
+                            <td>${vuln.url}</td>
+                            <td>${vuln.vulnerability_name}</td>
+                            <td>${vuln.description}</td>
+                            <td>${vuln.severity}</td>
+                            <td>${vuln.discovery_time}</td>
+                        `;
+                            vulnTable.appendChild(row);
+                        });
+                        searchResultCount.textContent = `找到 ${data.vulnerabilities.length} 条结果`;
+                        loadingSpinner.style.display = 'none';
+                    });
+            }
+
+            searchInput.addEventListener('input', function () {
+                const keyword = this.value.toLowerCase();
+                loadVulnerabilities(keyword);
+            });
+
+            loadVulnerabilities();
+        });
+    </script>
+
 {% endblock %}

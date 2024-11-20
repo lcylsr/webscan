@@ -6,15 +6,15 @@
     <style>
         .scan-form-container {
             background-color: #ffffff;
-            padding: 40px;
+            padding: 50px;
             border-radius: 10px;
             box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
-            max-width: 800px;
+            max-width: 1400px;
             margin: 30px auto;
         }
 
         .scan-result-table-container {
-            margin-top: 20px;
+            margin-top: 20px
         }
 
         table {
@@ -23,8 +23,8 @@
         }
 
         th, td {
-            padding: 12px;
-            text-align: left;
+            padding: 15px;
+            text-align: center;
             border-bottom: 1px solid #ddd;
         }
 
@@ -53,8 +53,8 @@
 
         .high-vuln-icon {
             display: inline-block;
-            width: 15px;
-            height: 15px;
+            width: 23px;
+            height: 23px;
             border-radius: 50%;
             background-color: red;
             margin-right: 5px;
@@ -62,8 +62,8 @@
 
         .medium-vuln-icon {
             display: inline-block;
-            width: 15px;
-            height: 15px;
+            width: 23px;
+            height: 23px;
             border-radius: 50%;
             background-color: orange;
             margin-right: 5px;
@@ -71,13 +71,24 @@
 
         .low-vuln-icon {
             display: inline-block;
-            width: 15px;
-            height: 15px;
+            width: 23px;
+            height: 23px;
             border-radius: 50%;
-            background-color: green;
+            background-color: #1387e8;
             margin-right: 5px;
         }
-        
+
+        .btn:hover {
+            cursor: pointer;
+            background-color: #e0e0e0; /* 悬停时的背景颜色，可根据设计调整 */
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.2); /* 悬停时的阴影效果 */
+        }
+
+        button[disabled] {
+            cursor: not-allowed;
+            opacity: 0.6; /* 降低透明度表示禁用 */
+            pointer-events: none; /* 禁止鼠标事件 */
+        }
     </style>
 {% endblock %}
 
@@ -87,9 +98,9 @@
         <form id="scan-form" method="post">
             {% csrf_token %}
             <div class="mb-3">
-                <label for="target-url" class="form-label">目标URL:</label>
-                <input type="url" class="form-control" id="target-url" name="target_url" placeholder="输入要扫描的网站地址" required>
-                <small class="form-text text-muted">请输入有效的URL，例如: https://www.example.com</small>
+                <label for="target-url" class="form-label">目标域名或IP地址:</label>
+                <input type="text" class="form-control" id="target-url" name="target_url" placeholder="输入要扫描的网站域名或IP地址" required>
+                <small class="form-text text-muted">请输入有效的域名或IP地址，例如: www.example.com 或 192.168.0.1</small>
             </div>
 
             <div class="mb-3">
@@ -111,6 +122,9 @@
             </div>
         </form>
 
+        <!-- 扫描进度条 -->
+        <progress id="scan-progress" value="0" max="100"></progress>
+
         <!-- 扫描结果展示 -->
         <div class="scan-result-table-container">
             <h3>扫描任务</h3>
@@ -120,27 +134,27 @@
                     <th>目标域名</th>
                     <th>扫描方式</th>
                     <th>开始时间</th>
-                    <th>漏洞情况</th>
+                    <th>漏洞分布情况</th>
                     <th>扫描状态</th>
                     <th>操作</th>
                 </tr>
                 </thead>
                 <tbody>
-                {% if scan_results %}
-                    {% for result in scan_results %}
-                        <tr class="{% if result.status == 'completed' %}table-success{% elif result.status == 'failed' %}table-danger{% endif %}">
+                {% if scan_tasks %}
+                    {% for result in scan_tasks %}
+                        <tr class="{% if result.status == 'completed' %}table-success{% elif result.status == 'failed' %}table-danger{% endif %}" data-scan-id="{{ result.scan_id }}">
                             <td>{{ result.target_url|escape }}</td>
                             <td>{{ result.scan_type|escape }}</td>
                             <td>{{ result.created_at|escape }}</td>
                             <td>
-                                <span class="high-vuln-icon">{{ result.high_vulns }}</span>
-                                <span class="medium-vuln-icon">{{ result.medium_vulns }}</span>
-                                <span class="low-vuln-icon">{{ result.low_vulns }}</span>
+                                <span class="high-vuln-icon" title="高风险漏洞数量">{{ result.high_vulns }}</span>
+                                <span class="medium-vuln-icon" title="中风险漏洞数量">{{ result.medium_vulns }}</span>
+                                <span class="low-vuln-icon" title="低风险漏洞数量">{{ result.low_vulns }}</span>
                             </td>
                             <td>{{ result.status|escape }}</td>
                             <td class="status">
-                                <button class="btn btn-primary" onclick="location.href='{% url 'webscan_detail' result.scan_id %}'" data-tooltip="点击查看本次扫描的详细信息" {% if result.status == 'processing' %}disabled{% endif %}>查看详情</button>
-                                <button class="btn btn-secondary" data-tooltip="点击下载本次扫描的报告" {% if result.status == 'processing' %}disabled{% endif %}>下载报告</button>
+                                <a href="{% url 'webscan:webscan_detail' result.scan_id %}" class="btn btn-primary" data-tooltip="点击查看本次扫描的详细信息" {% if result.status == 'processing' %}disabled{% endif %}>查看详情</a>
+                                <button class="btn btn-secondary" onclick="startDownloadReport('{{ result.scan_id }}')" data-tooltip="点击下载本次扫描的报告" {% if result.status == 'processing' %}disabled{% endif %}>下载报告</button>
                             </td>
                         </tr>
                     {% endfor %}
@@ -152,8 +166,96 @@
                 </tbody>
             </table>
         </div>
+        <div class="pagination">
+            <span class="step-links">
+                {% if scan_tasks.has_previous %}
+                    <a href="?page=1">&laquo; 首页</a>
+                    <a href="?page={{ scan_tasks.previous_page_number }}">上一页</a>
+                {% endif %}
+
+                <span class="current">
+                    第 {{ scan_tasks.number }} 页，共 {{ scan_tasks.paginator.num_pages }} 页
+                </span>
+
+                {% if scan_tasks.has_next %}
+                    <a href="?page={{ scan_tasks.next_page_number }}">下一页</a>
+                    <a href="?page={{ scan_tasks.paginator.num_pages }}">末页 &raquo;</a>
+                {% endif %}
+            </span>
+        </div>
     </div>
 
+    <script>
+        document.getElementById('scan-form').addEventListener('submit', function (event) {
+            event.preventDefault();
+            const targetUrl = document.getElementById('target-url').value;
+            const urlPattern = /^([a-zA-Z0-9.-]+|\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(:\d+)?(\/.*)?$/;
+            if (!urlPattern.test(targetUrl)) {
+                alert('请输入有效的域名或IP地址');
+                return;
+            }
 
-       
+            const formData = new FormData(this);
+            fetch('/webscan/', {
+                method: 'POST',
+                body: formData
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        startScanProgress(data.scan_id);
+                    } else {
+                        alert('扫描启动失败');
+                    }
+                });
+        });
+
+        function startScanProgress(scanId) {
+            const progressBar = document.getElementById('scan-progress');
+            const loadingIndicator = document.getElementById('loading-indicator');
+            loadingIndicator.style.display = 'block';
+
+            const interval = setInterval(() => {
+                fetch(`/webscan/webscan_progress/${scanId}/`)
+                    .then(response => response.json())
+                    .then(data => {
+                        progressBar.value = data.progress;
+                        if (data.status === 'completed' || data.status === 'failed') {
+                            clearInterval(interval);
+                            loadingIndicator.style.display = 'none';
+                            loadScanResults();
+                        }
+                    });
+            }, 2000);
+        }
+
+        function loadScanResults() {
+            fetch('/webscan/webscan_details/')
+                .then(response => response.json())
+                .then(data => {
+                    const tableBody = document.querySelector('#scan-result-table tbody');
+                    tableBody.innerHTML = '';
+                    data.results.forEach(result => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                        <td>${result.target_url}</td>
+                        <td>${result.scan_type}</td>
+                        <td>${result.created_at}</td>
+                        <td>
+                            <span class="high-vuln-icon" title="高风险漏洞数量">${result.high_vulns}</span>
+                            <span class="medium-vuln-icon" title="中风险漏洞数量">${result.medium_vulns}</span>
+                            <span class="low-vuln-icon" title="低风险漏洞数量">${result.low_vulns}</span>
+                        </td>
+                        <td>${result.status}</td>
+                        <td class="status">
+                            <a href="/webscan/webscan_detail/${result.scan_id}" class="btn btn-primary" data-tooltip="点击查看本次扫描的详细信息" ${result.status === 'processing' ? 'disabled' : ''}>查看详情</a>
+                            <button class="btn btn-secondary" onclick="startDownloadReport('${result.scan_id}')" data-tooltip="点击下载本次扫描的报告" ${result.status === 'processing' ? 'disabled' : ''}>下载报告</button>
+                        </td>
+                    `;
+                        tableBody.appendChild(row);
+                    });
+                });
+        }
+    </script>
+
 {% endblock %}

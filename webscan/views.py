@@ -1,23 +1,18 @@
 from django.utils import timezone
-from django.shortcuts import render, get_object_or_404, redirect
-from django.http import JsonResponse, HttpResponse
+from django.shortcuts import render, get_object_or_404
+from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
+from django.http import JsonResponse
 from django.core.exceptions import ValidationError, ObjectDoesNotExist
 from django.core.cache import cache
 from django.db import transaction
-from django.views.decorators.csrf import csrf_exempt
 from .models import ScanTask, ScanTaskStatus, ScanResults
-from .tests import VulnerabilityScanner, WebCrawler
+from .tests import VulnerabilityScanner, WebCrawler, add_protocol
 from .forms import ScanForm
 import logging
 import re
 import requests
 import concurrent.futures
 from functools import lru_cache
-from io import BytesIO
-from reportlab.lib.pagesizes import letter
-from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 
 # 设置日志记录
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -35,14 +30,16 @@ def index(request):
     """渲染首页视图"""
     return render(request, 'index.html', {'active': 'index'})
 
-
 def webscan(request):
     """漏洞扫描主页面的视图"""
     form = ScanForm(request.POST or None)
+    print("Form data:", request.POST)  # 打印表单数据
+    print("Form errors:", form.errors)  # 打印表单错误
 
     if request.method == 'POST' and form.is_valid():
         target_url = form.cleaned_data['target_url'].strip()
         scan_type = form.cleaned_data['scan_type'].strip()
+        target_url = add_protocol(target_url)
 
         try:
             validate_input(target_url, scan_type)
@@ -50,26 +47,23 @@ def webscan(request):
             return render_webscan_with_error(request, form, str(e))
 
         return perform_scan(request, target_url, scan_type, form)
+    scan_tasks = ScanTask.objects.all().order_by('-created_at')
+
+    paginator = Paginator(scan_tasks, 10)  # 每页显示10条记录
+    page = request.GET.get('page')
+
+    try:
+        scan_tasks = paginator.page(page)
+    except PageNotAnInteger:
+        scan_tasks = paginator.page(1)
+    except EmptyPage:
+        scan_tasks = paginator.page(paginator.num_pages)
 
     return render(request, 'webscan/webscan.html', {
         'active': 'webscan',
         'form': form,
+        "scan_tasks": scan_tasks,
     })
-
-@csrf_exempt
-def get_running_scan_task_id(request):
-    """获取正在运行的扫描任务ID"""
-    try:
-        running_task = ScanTask.objects.get(status='RUNNING')
-        return JsonResponse({'scan_task_id': running_task.id})
-    except ScanTask.DoesNotExist:
-        return JsonResponse({'error': '没有正在运行的扫描任务'}, status=404)
-    except Exception as e:
-        return JsonResponse({'error': f'获取正在运行的扫描任务ID时出错: {e}'}, status=500)
-
-def clear_running_scan_task_id(request):
-    """清除正在运行的扫描任务ID"""
-    request.session.pop('running_scan_task_id', None)
 
 def render_webscan_with_error(request, form, error_message):
     """渲染带有错误信息的webscan页面"""
@@ -79,6 +73,7 @@ def render_webscan_with_error(request, form, error_message):
         'form': form,
         'error_message': error_message,
     })
+
 def validate_input(target_url, scan_type):
     """验证输入有效性"""
     if not target_url or not scan_type:
@@ -91,13 +86,11 @@ def validate_input(target_url, scan_type):
     if scan_type not in valid_scan_types:
         raise ValidationError(f'无效的扫描类型，请选择 {"或".join(valid_scan_types)} 中的一个。')
 
-
 def is_valid_url(url):
     """更完善的验证URL格式的辅助函数"""
     url_pattern = re.compile(
         r'^(https?://)?([a-zA-Z0-9.-]+(:[a-zA-Z0-9.-]+)?@)?([a-zA-Z0-9.-]+)(:\d+)?(/[a-zA-Z0-9%&=?~_.+-]+)*(/?)$')
     return bool(url_pattern.match(url))
-
 
 def get_valid_scan_types():
     """从配置文件或其他可配置源获取有效地扫描类型列表"""
@@ -139,7 +132,6 @@ def create_scan_task(target_url, scan_type):
     set_cache_data(cache_key, cache_data)
 
     return scan_task
-
 
 def get_scan_task_status(request):
     """获取扫描任务的状态"""
@@ -188,11 +180,13 @@ def perform_scan(request, target_url, scan_type, form):
             return render_webscan_with_error(request, form, "扫描结果无效，请稍后重试。")
 
         save_scan_results(scan_task, scan_results)
-        try:
-            return redirect('webscan:webscan_detail', scan_task_id=scan_task.scan_id)
-        except Exception as e:
-            logger.error(f"重定向到 webscan_detail 时发生错误: {e}")
-            raise
+        scan_task = ScanTask.objects.all().order_by('-created_at').first()
+        context = {
+            'active': 'webscan',
+            'form': form,
+            "scan_results": scan_task,
+        }
+        return render(request, 'webscan/webscan.html', context)
 
     except (ConnectionError, TimeoutError) as e:
         logger.error(f"爬取过程中发生网络错误: {e}，目标网址: {target_url}")
@@ -216,7 +210,6 @@ def validate_url(url):
 
 def validate_crawled_urls(crawl_urls):
     return [url for url in crawl_urls if validate_url(url)]
-
 
 @transaction.atomic
 def crawl_target(request, target_url, scan_type, scan_task):
@@ -279,7 +272,6 @@ def crawl_target(request, target_url, scan_type, scan_task):
         # 返回包含错误信息的字典以便调用处更好地处理
         return {'success': False, 'error': str(e)}
 
-
 @transaction.atomic
 def execute_vulnerability_scan(request, scan_task, valid_crawl_urls):
     logger.info(f"开始执行漏洞扫描 - 目标网址: {scan_task.target_url}, 扫描类型: {scan_task.scan_type}")
@@ -313,10 +305,10 @@ def execute_vulnerability_scan(request, scan_task, valid_crawl_urls):
                 except Exception as e:
                     logger.error(f"扫描URL对应的任务出现异常: {e}")
 
-        # if not scan_results:
-        #     logger.error(f"扫描结果为空列表，可能是扫描过程未获取到有效数据，请检查扫描工具或网络连接。")
-        #     update_scan_task_status(scan_task, ScanTaskStatus.FAILED)
-        #     return None
+        if not scan_results:
+            logger.error(f"扫描结果为空列表，可能是扫描过程未获取到有效数据，请检查扫描工具或网络连接。")
+            update_scan_task_status(scan_task, ScanTaskStatus.FAILED)
+            return None
 
         scanned_pages = len(valid_crawl_urls)
 
@@ -342,29 +334,19 @@ def execute_vulnerability_scan(request, scan_task, valid_crawl_urls):
 
         return None
 
-
-
 def update_scan_task_status(scan_task, new_status):
-    """
-    更新扫描任务的状态，并保存到数据库
-    """
+    """更新扫描任务的状态，并保存到数据库"""
     scan_task.status = new_status
     scan_task.save()
 
-
 def update_scan_task_info(scan_task, scanned_pages, new_status):
-    """
-    更新扫描任务的已扫描页面数量以及状态，并保存到数据库
-    """
+    """更新扫描任务的已扫描页面数量以及状态，并保存到数据库"""
     scan_task.scanned_pages = scanned_pages
     scan_task.status = new_status
     scan_task.save()
 
-
 def update_scan_task_cache(scan_task):
-    """
-    更新与扫描任务相关的缓存信息，包含状态、总页面数、已扫描页面数等关键数据
-    """
+    """更新与扫描任务相关的缓存信息，包含状态、总页面数、已扫描页面数等关键数据"""
     cache_key = get_cache_key(scan_task.scan_id)
     cache_data = {
         'status': scan_task.status,
@@ -373,13 +355,10 @@ def update_scan_task_cache(scan_task):
     }
     set_cache_data(cache_key, cache_data)
 
-
 def is_valid_scan_results(results):
-    """
-    验证扫描结果的有效性，确保结果符合预期的结构和内容。
+    """验证扫描结果的有效性，确保结果符合预期的结构和内容。
     :param results: 扫描结果，期待为一个列表，每个元素是一个包含 URL 和漏洞列表的字典
-    :return: 如果结果有效返回 True，否则返回 False
-    """
+    :return: 如果结果有效返回 True，否则返回 False"""
     if not isinstance(results, list) or not results:
         logger.error(f"扫描结果类型无效: {type(results)}")
         return False
@@ -510,49 +489,29 @@ def save_scan_results(scan_task, scan_results):
 def webscan_detail(request, scan_task_id):
     """进入每个扫描的详情页中，返回模板和相关数据，包括漏洞详情、扫描进度等信息"""
     scan_task = get_object_or_404(ScanTask, scan_id=scan_task_id)
-    scan_results = ScanTask.objects.filter(scan_id=scan_task_id)
-    vulnerability_details = extract_vulnerability_details(scan_results)
+    vulnerability_details = ScanResults.objects.filter(scan_id=scan_task_id).order_by('-discovery_time')
 
-    return render(request, 'webscan/webscan-detail.html', {
+    paginator = Paginator(vulnerability_details, 10)  # 每页显示10条记录
+    page = request.GET.get('page')
+
+    try:
+        vulnerability_details = paginator.page(page)
+    except PageNotAnInteger:
+        vulnerability_details = paginator.page(1)
+    except EmptyPage:
+        vulnerability_details = paginator.page(paginator.num_pages)
+
+    context = {
         'scan_task': scan_task,
-        'scan_results': scan_results,
         'vulnerability_details': vulnerability_details,
-    })
-
-def extract_vulnerability_details(scan_results):
-    """提取漏洞详情"""
-    vulnerability_details = []
-    for result in scan_results:
-        logger.info(f"处理扫描结果: {result}")
-        if hasattr(result, 'details') and isinstance(result.details, dict) and 'description' in result.details:
-            vulnerability_details.append({
-                'description': result.details['description'],
-                'severity': result.details.get('severity', 'Unknown'),
-                'url': result.details.get('url', 'Unknown'),
-            })
-        else:
-            vulnerability_details.append({
-                'description': 'No details available',
-                'severity': 'Unknown',
-                'url': 'Unknown',
-            })
-    return vulnerability_details
-
-
-def webscan_detail_info(request):
-    """拿到每个漏洞的详细信息，作为ajax响应返回到前端模板中"""
-    scan_task_id = request.GET.get('scan_task_id')
-    if not scan_task_id:
-        return JsonResponse({'error': '缺少必要的扫描任务ID'}, status=400)
-
-    scan_task = get_object_or_404(ScanTask, scan_id=scan_task_id)
-    scan_results = ScanTask.objects.filter(scan_task=scan_task)
-    vulnerability_details = extract_vulnerability_details(scan_results)
-
-    return JsonResponse(vulnerability_details, safe=False)
+        'no_scan_task_msg': '暂无相关扫描任务信息，请确认是否已完成扫描或联系管理员' if not scan_task else '',
+        'no_vuln_msg': '本次扫描未检测到任何漏洞，若您认为存在异常，可尝试更换扫描类型重新扫描' if not vulnerability_details else '',
+    }
+    return render(request, 'webscan/webscan-detail.html', context)
 
 def webscan_progress(request):
     scan_task_id = request.GET.get('scan_task_id')
+    print(scan_task_id)
     if not scan_task_id:
         return JsonResponse({'error': 'Missing scan_task_id'}, status=400)
 
@@ -610,82 +569,82 @@ def webscan_report(request):
 
     return JsonResponse(report)
 
-def webscan_report_download(request):
-    """生成漏洞扫描报告并提供下载的接口视图"""
-    scan_task_id = request.GET.get('scan_task_id')
-    if not scan_task_id:
-        return JsonResponse({'error': '缺少必要的扫描任务ID'}, status=400)
-
-    scan_task = get_object_or_404(ScanTask, scan_id=scan_task_id)
-    scan_results = ScanTask.objects.filter(scan_task=scan_task)
-    report = generate_report(scan_task, scan_results)
-
-    try:
-        # 将报告转换为PDF格式
-        pdf_report = generate_pdf_report(report)
-
-        # 提供PDF文件下载
-        response = HttpResponse(pdf_report, content_type='application/pdf')
-        response['Content-Disposition'] = f'attachment; filename="scan_report_{scan_task_id}.pdf"'
-        return response
-    except Exception as e:
-        logger.error(f"生成PDF报告时发生错误 - scan_task_id: {scan_task_id}, 错误详情: {e}")
-        return JsonResponse({'error': '生成PDF报告时发生错误，请稍后重试'}, status=500)
-
-def create_general_table(data, styles, table_style=None):
-    """创建通用表格并设置样式的辅助函数"""
-    table = Table(data)
-    if table_style:
-        table.setStyle(table_style)
-    else:
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-            ('GRID', (0, 0), (-1, -1), 1, 1)
-        ]))
-    return table
-
-def generate_pdf_report(report):
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter)
-    styles = getSampleStyleSheet()
-
-    elements = [Paragraph(report['report_title'], styles['Title']), Spacer(1, 12)]
-
-    # 添加报告标题
-
-    # 添加扫描任务信息
-    task_info = [
-        ['扫描任务ID', report['scan_task_id']],
-        ['目标URL', report['target_url']],
-        ['扫描类型', report['scan_type']],
-        ['状态', report['status']],
-        ['总页面数', report['total_pages']],
-        ['已扫描页面数', report['scanned_pages']],
-        ['完成时间', report['completed_at']]
-    ]
-    elements.append(create_general_table(task_info, styles))
-    elements.append(Spacer(1, 12))
-
-    # 添加漏洞信息
-    vulnerabilities = report['vulnerabilities']
-    for vulnerability in vulnerabilities:
-        vuln_info = [
-            ['低危漏洞', vulnerability['low_vulns']],
-            ['信息漏洞', vulnerability['infovulns']],
-            ['中危漏洞', vulnerability['medium_vulns']],
-            ['高危漏洞', vulnerability['high_vulns']],
-            ['总漏洞数', vulnerability['total_vulns']],
-            ['详细信息', vulnerability['details']]
-        ]
-        elements.append(create_general_table(vuln_info, styles))
-        elements.append(Spacer(1, 12))
-
-    doc.build(elements)
-    pdf = buffer.getvalue()
-    buffer.close()
-    return pdf
+# def webscan_report_download(request):
+#     """生成漏洞扫描报告并提供下载的接口视图"""
+#     scan_task_id = request.GET.get('scan_task_id')
+#     if not scan_task_id:
+#         return JsonResponse({'error': '缺少必要的扫描任务ID'}, status=400)
+#
+#     scan_task = get_object_or_404(ScanTask, scan_id=scan_task_id)
+#     scan_results = ScanTask.objects.filter(scan_task=scan_task)
+#     report = generate_report(scan_task, scan_results)
+#
+#     try:
+#         # 将报告转换为PDF格式
+#         pdf_report = generate_pdf_report(report)
+#
+#         # 提供PDF文件下载
+#         response = HttpResponse(pdf_report, content_type='application/pdf')
+#         response['Content-Disposition'] = f'attachment; filename="scan_report_{scan_task_id}.pdf"'
+#         return response
+#     except Exception as e:
+#         logger.error(f"生成PDF报告时发生错误 - scan_task_id: {scan_task_id}, 错误详情: {e}")
+#         return JsonResponse({'error': '生成PDF报告时发生错误，请稍后重试'}, status=500)
+#
+# def create_general_table(data, styles, table_style=None):
+#     """创建通用表格并设置样式的辅助函数"""
+#     table = Table(data)
+#     if table_style:
+#         table.setStyle(table_style)
+#     else:
+#         table.setStyle(TableStyle([
+#             ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+#             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+#             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+#             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+#             ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+#             ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+#             ('GRID', (0, 0), (-1, -1), 1, 1)
+#         ]))
+#     return table
+#
+# def generate_pdf_report(report):
+#     buffer = BytesIO()
+#     doc = SimpleDocTemplate(buffer, pagesize=letter)
+#     styles = getSampleStyleSheet()
+#
+#     elements = [Paragraph(report['report_title'], styles['Title']), Spacer(1, 12)]
+#
+#     # 添加报告标题
+#
+#     # 添加扫描任务信息
+#     task_info = [
+#         ['扫描任务ID', report['scan_task_id']],
+#         ['目标URL', report['target_url']],
+#         ['扫描类型', report['scan_type']],
+#         ['状态', report['status']],
+#         ['总页面数', report['total_pages']],
+#         ['已扫描页面数', report['scanned_pages']],
+#         ['完成时间', report['completed_at']]
+#     ]
+#     elements.append(create_general_table(task_info, styles))
+#     elements.append(Spacer(1, 12))
+#
+#     # 添加漏洞信息
+#     vulnerabilities = report['vulnerabilities']
+#     for vulnerability in vulnerabilities:
+#         vuln_info = [
+#             ['低危漏洞', vulnerability['low_vulns']],
+#             ['信息漏洞', vulnerability['infovulns']],
+#             ['中危漏洞', vulnerability['medium_vulns']],
+#             ['高危漏洞', vulnerability['high_vulns']],
+#             ['总漏洞数', vulnerability['total_vulns']],
+#             ['详细信息', vulnerability['details']]
+#         ]
+#         elements.append(create_general_table(vuln_info, styles))
+#         elements.append(Spacer(1, 12))
+#
+#     doc.build(elements)
+#     pdf = buffer.getvalue()
+#     buffer.close()
+#     return pdf

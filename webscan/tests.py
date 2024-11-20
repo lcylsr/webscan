@@ -1,12 +1,13 @@
 import hashlib
 import logging
+import socket
 import time
 import random
 import threading
-from bitstring import BitArray
+from bitarray import bitarray
 from concurrent.futures import ThreadPoolExecutor
 import requests
-from urllib.parse import urlparse, urljoin
+from urllib.parse import urlparse, urljoin, urlunparse
 from bs4 import BeautifulSoup
 from webscan.payloads import (
     SQL_INJECTION_PAYLOADS,
@@ -28,7 +29,8 @@ class BloomFilter:
         self.num_hashes = num_hashes
         self.num_buckets = num_buckets
         self.bucket_size = self.size // self.num_buckets
-        self.bit_array = BitArray(length=self.size)
+        self.bit_array = bitarray(self.size)
+        self.bit_array.setall(False)
         self.locks = [threading.Lock() for _ in range(self.num_buckets)]
         self.encoded_template = "{}".encode('utf-8')
 
@@ -91,7 +93,7 @@ class WebCrawler:
             result["visited_count"] = len(self.visited)
 
 
-        logger.info(f"Crawling: {url}")
+        logger.info(f"Crawling: {url} (Depth: {depth})")
         time.sleep(random.uniform(1, 3))
 
         try:
@@ -119,8 +121,7 @@ class WebCrawler:
 
             for link in links:
                 if not self.bloom_filter.contains(link):
-                    if not self.executor._shutdown:  # 检查线程池是否已经关闭
-                        self.executor.submit(self.crawl, link, depth + 1)
+                    self.executor.submit(self.crawl, link, depth + 1)
 
         except Exception as e:
             logger.error(f"Error processing page {base_url}: {e}")
@@ -128,6 +129,39 @@ class WebCrawler:
     def shutdown_executor(self):
         """关闭线程池"""
         self.executor.shutdown(wait=True)
+
+
+def is_https_supported(domain):
+    """判断域名是否支持HTTPS。"""
+    try:
+        # 尝试解析HTTPS的IP地址
+        socket.getaddrinfo(domain, 443, socket.AF_INET, socket.SOCK_STREAM)
+        return True
+    except socket.error:
+        return False
+
+def add_protocol(input_str, timeout=5):
+    """根据连通性判断为输入的域名或IP添加正确的协议前缀（http或https）。"""
+    # 解析输入字符串，获取域名或IP
+    parsed_url = urlparse(input_str)
+    domain = parsed_url.netloc or parsed_url.path
+
+    # 判断域名是否支持HTTPS
+    if is_https_supported(domain):
+        protocol = 'https://'
+    else:
+        protocol = 'http://'
+
+    full_url = protocol + domain
+
+    try:
+        response = requests.get(full_url, timeout=timeout)
+        if response.status_code == 200:
+            return full_url
+    except requests.RequestException as e:
+        print(f"Error connecting to {full_url}: {e}")
+
+    return None  # 如果无法确定协议，则返回None
 
 class VulnerabilityScanner:
     """用于执行漏洞扫描的类，针对给定的目标URL进行多种安全测试。"""
@@ -184,6 +218,7 @@ class VulnerabilityScanner:
                         'request': self.last_request,
                         'response': {
                             'status_code':self.last_response.status_code,
+                            'headers': self.last_response.headers,
                         }
                     }
                     results['vulnerabilities'].append(vulnerability_detail)

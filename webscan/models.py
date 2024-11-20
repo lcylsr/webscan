@@ -28,7 +28,7 @@ class ScanTask(models.Model):
     ScanTask模型用于表示漏洞扫描任务相关信息，包含任务的基本属性、状态以及漏洞和页面扫描情况统计等内容。
     """
     scan_id = models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, help_text="扫描任务ID")
-    target_url = models.URLField(max_length=255, help_text="扫描目标网址")
+    target_url = models.URLField(max_length=255, help_text="扫描目标域名或IP")
     scan_type = models.CharField(max_length=50, help_text="扫描类型，如快速、深度等")
     status = models.CharField(max_length=50, choices=ScanTaskStatus.choices, default=ScanTaskStatus.PENDING, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)

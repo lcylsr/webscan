@@ -4,11 +4,11 @@ class ScanForm(forms.Form):
     """表单用于收集扫描请求的信息"""
 
     target_url = forms.URLField(
-        label='目标URL',
+        label='目标域名或IP地址',
         max_length=200,
         error_messages={
-            'required': '请输入目标URL。',
-            'invalid': '请输入有效的URL，例如: https://www.example.com。',
+            'required': '请输入目标域名或IP地址。',
+            'invalid': '请输入有效的域名或IP地址，例如: www.example.com 或 192.168.0.1。',
         },
     )
 
@@ -24,7 +24,7 @@ class ScanForm(forms.Form):
     )
 
     def clean_target_url(self):
-        """验证目标URL的有效性"""
+        """验证目标目标域名或IP地址"""
         target_url = self.cleaned_data.get('target_url')
         # 直接返回，不需要额外的验证
         return target_url
