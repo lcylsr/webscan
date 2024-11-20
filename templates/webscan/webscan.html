@@ -4,43 +4,87 @@
 
 {% block head %}
     <style>
-        .scan-area {
+        .scan-form-container {
             background-color: #ffffff;
             padding: 40px;
             border-radius: 10px;
             box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
             max-width: 800px;
-            margin: 30px auto;  /* 调整上边距使其更美观 */
+            margin: 30px auto;
         }
-        .scan-results {
+
+        .scan-result-table-container {
             margin-top: 20px;
         }
+
         table {
             width: 100%;
             border-collapse: collapse;
         }
+
         th, td {
             padding: 12px;
             text-align: left;
             border-bottom: 1px solid #ddd;
         }
+
         th {
             background-color: #f2f2f2;
         }
+
         .status {
             display: flex;
-            gap: 10px; /* 状态按钮间距 */
+            gap: 10px;
         }
+
         .loading {
-            display: none; /* 隐藏加载时的信息 */
+            display: none;
         }
+
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.3);
+            z-index: 1;
+        }
+
+        .high-vuln-icon {
+            display: inline-block;
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            background-color: red;
+            margin-right: 5px;
+        }
+
+        .medium-vuln-icon {
+            display: inline-block;
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            background-color: orange;
+            margin-right: 5px;
+        }
+
+        .low-vuln-icon {
+            display: inline-block;
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            background-color: green;
+            margin-right: 5px;
+        }
+        
     </style>
 {% endblock %}
 
 {% block content %}
-    <div class="scan-area">
+    <div class="scan-form-container">
         <h1 class="text-center">漏洞扫描</h1>
-        <form id="scan-form" method="post" onsubmit="return validateForm()">
+        <form id="scan-form" method="post">
             {% csrf_token %}
             <div class="mb-3">
                 <label for="target-url" class="form-label">目标URL:</label>
@@ -51,48 +95,58 @@
             <div class="mb-3">
                 <label for="scan-type" class="form-label">扫描类型:</label>
                 <select id="scan-type" name="scan_type" class="form-select" required>
-                    <option value="" disabled selected>选择扫描类型</option> <!-- 提示用户选择 -->
-                    <option value="quick">快速扫描</option>
-                    <option value="deep">深度扫描</option>
+                    <option value="" disabled selected>选择扫描类型</option>
+                    <option value="quick" data-tooltip="快速扫描，对常见漏洞进行快速检测，适用于初步排查。">快速扫描</option>
+                    <option value="deep" data-tooltip="深度扫描，全面检测多种类型的漏洞，耗时可能较长。">深度扫描</option>
                 </select>
             </div>
 
             <div class="mb-3 text-center">
                 <button type="submit" class="btn btn-primary" id="start-scan">开始扫描</button>
-                <div class="loading" id="loading-indicator">扫描中，请稍候...</div> <!-- 加载信息 -->
+                <div class="loading" id="loading-indicator">
+                    <div class="loading-overlay"></div>
+                    <span class="spinner-border spinner-border-sm" role="status"><span class="sr-only">正在扫描</span></span>
+                    扫描中，请稍候...
+                </div>
             </div>
         </form>
 
         <!-- 扫描结果展示 -->
-        <div class="scan-results" id="scan-results">
-            <h3>扫描结果</h3>
-            <table>
+        <div class="scan-result-table-container">
+            <h3>扫描任务</h3>
+            <table id="scan-result-table" class="table table-striped">
                 <thead>
                 <tr>
-                    <th>目标名称</th>
-                    <th>扫描状态</th>
+                    <th>目标域名</th>
                     <th>扫描方式</th>
                     <th>开始时间</th>
+                    <th>漏洞情况</th>
+                    <th>扫描状态</th>
                     <th>操作</th>
                 </tr>
                 </thead>
                 <tbody>
                 {% if scan_results %}
                     {% for result in scan_results %}
-                        <tr>
-                            <td>{{ result.target_name|escape }}</td>
+                        <tr class="{% if result.status == 'completed' %}table-success{% elif result.status == 'failed' %}table-danger{% endif %}">
+                            <td>{{ result.target_url|escape }}</td>
+                            <td>{{ result.scan_type|escape }}</td>
+                            <td>{{ result.created_at|escape }}</td>
+                            <td>
+                                <span class="high-vuln-icon">{{ result.high_vulns }}</span>
+                                <span class="medium-vuln-icon">{{ result.medium_vulns }}</span>
+                                <span class="low-vuln-icon">{{ result.low_vulns }}</span>
+                            </td>
                             <td>{{ result.status|escape }}</td>
-                            <td>{{ result.scan_method|escape }}</td>
-                            <td>{{ result.start_time|escape }}</td>
                             <td class="status">
-                                <button class="btn btn-primary" onclick="location.href='{% url 'webscan:webscan_detail' result.id %}'">查看详情</button>
-                                <button class="btn btn-secondary">下载报告</button>
+                                <button class="btn btn-primary" onclick="location.href='{% url 'webscan_detail' result.scan_id %}'" data-tooltip="点击查看本次扫描的详细信息" {% if result.status == 'processing' %}disabled{% endif %}>查看详情</button>
+                                <button class="btn btn-secondary" data-tooltip="点击下载本次扫描的报告" {% if result.status == 'processing' %}disabled{% endif %}>下载报告</button>
                             </td>
                         </tr>
                     {% endfor %}
                 {% else %}
                     <tr>
-                        <td colspan="5" class="text-center">没有扫描结果。</td>
+                        <td colspan="6" class="text-center">没有扫描结果。</td>
                     </tr>
                 {% endif %}
                 </tbody>
@@ -100,21 +154,6 @@
         </div>
     </div>
 
-    <script>
-        const form = document.getElementById('scan-form');
-        const loadingIndicator = document.getElementById('loading-indicator');
 
-        form.addEventListener('submit', function() {
-            loadingIndicator.style.display = 'block'; // 显示加载提示
-        });
-
-        function validateForm() {
-            const urlInput = document.getElementById('target-url').value;
-            if (!urlInput) {
-                alert('请输入有效的URL。');
-                return false;
-            }
-            return true; // 输入有效，允许提交
-        }
-    </script>
+       
 {% endblock %}

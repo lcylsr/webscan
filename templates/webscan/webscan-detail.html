@@ -4,31 +4,45 @@
 
 {% block content %}
 <div class="container mt-5">
-    <h1 class="text-center">漏洞详情</h1>
+    <h1 class="text-center mb-4">漏洞详情</h1>
+
     <div class="card">
         <div class="card-header">
-            <h2>{{ scan.url }} - {{ scan.scan_type }}</h2> <!-- 显示扫描的URL和类型 -->
+            <h5>扫描信息</h5>
         </div>
         <div class="card-body">
-            <h5 class="card-title">结果详细信息</h5>
-            <ul class="list-group">
-                {% for vulnerability in vulnerability_details %}
-                    <li class="list-group-item">
-                        <strong>{{ vulnerability.description }}</strong><br>
-                        <p class="mb-1">{{ vulnerability.detail }}</p> <!-- 显示漏洞的详细信息 -->
-                    </li>
-                {% empty %}
-                    <li class="list-group-item">没有发现任何漏洞。</li>
-                {% endfor %}
-            </ul>
-        </div>
-        <div class="card-footer text-muted">
-            发现时间: {{ scan.created_at|date:"Y-m-d H:i" }} <!-- 显示扫描的发现时间 -->
+            <p><strong>目标 URL:</strong> {{ scan.url|escape }}</p>
+            <p><strong>扫描类型:</strong> {{ scan.scan_type|escape }}</p>
+            <p><strong>扫描时间:</strong> {{ scan.created_at|date:"Y-m-d H:i:s" }}</p>
         </div>
     </div>
-    <div class="mt-4 text-center">
-        <a href="{% url 'webscan:report' %}" class="btn btn-secondary">返回报告</a> <!-- 返回报告 -->
-        <a href="javascript:window.history.back();" class="btn btn-light">返回上一页</a> <!-- 返回上一页 -->
+
+    <div class="mt-4">
+        <h5>漏洞列表</h5>
+        {% if vulnerability_details %}
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>漏洞描述</th>
+                        <th>详细信息</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for detail in vulnerability_details %}
+                    <tr>
+                        <td>{{ detail.description|escape }}</td>
+                        <td>{{ detail.detail|safe }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p>没有发现漏洞。</p>
+        {% endif %}
+    </div>
+
+    <div class="mt-4">
+        <a href="{% url 'webscan:webscan' %}" class="btn btn-primary">返回扫描</a>
     </div>
 </div>
 {% endblock %}
